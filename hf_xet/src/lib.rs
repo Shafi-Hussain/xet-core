@@ -82,6 +82,8 @@ pub struct PyPointerFile {
     hash: String,
     #[pyo3(get)]
     filesize: u64,
+    #[pyo3(get)]
+    sha_hash: String,
 }
 
 impl From<PointerFile> for PyPointerFile {
@@ -90,24 +92,26 @@ impl From<PointerFile> for PyPointerFile {
             path: pf.path().to_string(),
             hash: pf.hash_string().to_string(),
             filesize: pf.filesize(),
+            sha_hash: pf.sha_hash.to_string(),
         }
     }
 }
 
 impl From<PyPointerFile> for PointerFile {
     fn from(pf: PyPointerFile) -> Self {
-        PointerFile::init_from_info(&pf.path, &pf.hash, pf.filesize)
+        PointerFile::init_from_info(&pf.path, &pf.hash, pf.filesize, pf.sha_hash.as_str())
     }
 }
 
 #[pymethods]
 impl PyPointerFile {
     #[new]
-    pub fn new(path: String, hash: String, filesize: u64) -> Self {
+    pub fn new(path: String, hash: String, filesize: u64, sha_hash: String) -> Self {
         Self {
             path,
             hash,
             filesize,
+            sha_hash,
         }
     }
 
@@ -117,8 +121,8 @@ impl PyPointerFile {
 
     fn __repr__(&self) -> String {
         format!(
-            "PyPointerFile({}, {}, {})",
-            self.path, self.hash, self.filesize
+            "PyPointerFile({}, {}, {} {})",
+            self.path, self.hash, self.filesize, self.sha_hash
         )
     }
 }

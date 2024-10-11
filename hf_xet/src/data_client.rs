@@ -1,5 +1,4 @@
 use crate::config::default_config;
-use utils::auth::TokenRefresher;
 use data::errors::DataProcessingError;
 use data::{errors, PointerFile, PointerFileTranslator};
 use parutils::{tokio_par_for_each, ParallelError};
@@ -8,6 +7,7 @@ use std::fs::File;
 use std::io::{BufReader, Read, Write};
 use std::path::PathBuf;
 use std::sync::Arc;
+use utils::auth::TokenRefresher;
 
 /// The maximum git filter protocol packet size
 pub const MAX_CONCURRENT_UPLOADS: usize = 8; // TODO
@@ -34,6 +34,7 @@ pub async fn upload_async(
 
     let processor = Arc::new(PointerFileTranslator::new(config).await?);
     let processor = &processor;
+
     // for all files, clean them, producing pointer files.
     let pointers = tokio_par_for_each(file_paths, MAX_CONCURRENT_UPLOADS, |f, _| async {
         let proc = processor.clone();
@@ -46,7 +47,19 @@ pub async fn upload_async(
     })?;
 
     // Push the CAS blocks and flush the mdb to disk
-    processor.finalize_cleaning().await?;
+    let sha_map = processor.finalize_cleaning().await?;
+
+    let pointers = pointers
+        .into_iter()
+        .map(|p| PointerFile {
+            version_string: p.version_string,
+            path: p.path,
+            hash: p.hash.clone(),
+            filesize: p.filesize,
+            is_valid: p.is_valid,
+            sha_hash: sha_map.get(&p.hash).unwrap().clone(),
+        })
+        .collect();
 
     Ok(pointers)
 }

@@ -1,6 +1,7 @@
 use merklehash::MerkleHash;
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
+use std::collections::HashMap;
 
 mod error;
 mod key;
@@ -46,6 +47,7 @@ pub enum UploadShardResponseType {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct UploadShardResponse {
     pub result: UploadShardResponseType,
+    pub sha_mapping: Option<HashMap<String, String>>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

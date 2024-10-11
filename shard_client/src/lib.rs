@@ -12,6 +12,7 @@ mod local_shard_client;
 
 use crate::error::Result;
 use async_trait::async_trait;
+use cas_types::UploadShardResponse;
 use error::ShardClientError;
 pub use http_shard_client::HttpShardClient;
 pub use local_shard_client::LocalShardClient;
@@ -42,5 +43,5 @@ pub trait RegistrationClient {
         force_sync: bool,
         shard_data: &[u8],
         salt: &[u8; 32],
-    ) -> Result<bool>;
+    ) -> Result<UploadShardResponse>;
 }

@@ -14,6 +14,7 @@ use mdb_shard::{
 use merklehash::MerkleHash;
 use parutils::tokio_par_for_each;
 use shard_client::ShardClientInterface;
+use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -277,7 +278,9 @@ impl RemoteShardInterface {
 
         let shard_file = cache_dir.join(local_shard_name(shard_hash));
 
-        shard_manager.load_and_cleanup_shards_by_path(&[shard_file]).await?;
+        shard_manager
+            .load_and_cleanup_shards_by_path(&[shard_file])
+            .await?;
 
         Ok(())
     }
@@ -294,9 +297,12 @@ impl RemoteShardInterface {
         Ok(merged_shards_jh)
     }
 
-    pub async fn upload_and_register_shards(&self, shards: Vec<MDBShardFile>) -> Result<()> {
+    pub async fn upload_and_register_shards(
+        &self,
+        shards: Vec<MDBShardFile>,
+    ) -> Result<HashMap<String, String>> {
         if shards.is_empty() {
-            return Ok(());
+            return Ok(HashMap::new());
         }
 
         let salt = self.repo_salt()?;
@@ -305,7 +311,7 @@ impl RemoteShardInterface {
         let shard_prefix = self.shard_prefix.clone();
         let shard_prefix_ref = &shard_prefix;
 
-        tokio_par_for_each(shards, *MAX_CONCURRENT_UPLOADS, |si, _| async move {
+        let maps = tokio_par_for_each(shards, *MAX_CONCURRENT_UPLOADS, |si, _| async move {
             // For each shard:
             // 1. Upload directly to CAS.
             // 2. Sync to server.
@@ -317,7 +323,7 @@ impl RemoteShardInterface {
             let data = std::fs::read(&si.path)?;
 
             // Upload the shard.
-            shard_client_ref
+            let result = shard_client_ref
                 .upload_shard(&self.shard_prefix, &si.shard_hash, false, &data, &salt)
                 .await?;
 
@@ -326,7 +332,7 @@ impl RemoteShardInterface {
                 &si.shard_hash
             );
 
-            Ok(())
+            Ok(result.sha_mapping)
         })
         .await
         .map_err(|e| match e {
@@ -336,7 +342,15 @@ impl RemoteShardInterface {
             parutils::ParallelError::TaskError(e) => e,
         })?;
 
-        Ok(())
+        let merged_map = maps
+            .into_iter()
+            .filter_map(|x| x)
+            .fold(HashMap::new(), |mut acc, x| {
+                acc.extend(x);
+                acc
+            });
+
+        Ok(merged_map)
     }
 
     pub async fn move_session_shards_to_local_cache(&self) -> Result<()> {

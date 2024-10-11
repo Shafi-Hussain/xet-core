@@ -12,6 +12,7 @@ use mdb_shard::file_structs::MDBFileInfo;
 use mdb_shard::ShardFileManager;
 use merkledb::aggregate_hashes::cas_node_hash;
 use merklehash::MerkleHash;
+use std::collections::HashMap;
 use std::io::Write;
 use std::mem::take;
 use std::ops::DerefMut;
@@ -57,6 +58,8 @@ pub struct PointerFileTranslator {
     remote_shards: Arc<RemoteShardInterface>,
     cas: Arc<dyn Client + Send + Sync>,
 
+    lfs_sha256: String,
+
     /* ----- Deduped data shared across files ----- */
     global_cas_data: Arc<Mutex<CASDataAggregator>>,
 }
@@ -96,6 +99,7 @@ impl PointerFileTranslator {
             shard_manager,
             remote_shards,
             cas: cas_client,
+            lfs_sha256: String::new(),
             global_cas_data: Default::default(),
         })
     }
@@ -134,7 +138,7 @@ impl PointerFileTranslator {
         .await
     }
 
-    pub async fn finalize_cleaning(&self) -> Result<()> {
+    pub async fn finalize_cleaning(&self) -> Result<HashMap<String, String>> {
         // flush accumulated CAS data.
         let mut cas_data_accumulator = self.global_cas_data.lock().await;
         let mut new_cas_data = take(cas_data_accumulator.deref_mut());
@@ -157,12 +161,10 @@ impl PointerFileTranslator {
         // flush accumulated memory shard.
         self.shard_manager.flush().await?;
 
-        self.upload().await?;
-
-        Ok(())
+        Ok(self.upload().await?)
     }
 
-    async fn upload(&self) -> Result<()> {
+    async fn upload(&self) -> Result<HashMap<String, String>> {
         // First, get all the shards prepared and load them.
         let merged_shards_jh = self.remote_shards.merge_shards()?;
 
@@ -183,7 +185,8 @@ impl PointerFileTranslator {
         let merged_shards = merged_shards_jh.await??;
 
         // Now, these need to be sent to the remote.
-        self.remote_shards
+        let sha_map = self
+            .remote_shards
             .upload_and_register_shards(merged_shards)
             .await?;
 
@@ -193,7 +196,7 @@ impl PointerFileTranslator {
             .move_session_shards_to_local_cache()
             .await?;
 
-        Ok(())
+        Ok(sha_map)
     }
 
     async fn upload_cas(&self) -> Result<()> {

@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use bytes::Buf;
 use cas_client::build_reqwest_client;
 use cas_types::Key;
-use cas_types::{QueryReconstructionResponse, UploadShardResponse, UploadShardResponseType};
+use cas_types::{QueryReconstructionResponse, UploadShardResponse};
 use file_utils::write_all_safe;
 use mdb_shard::file_structs::{FileDataSequenceEntry, FileDataSequenceHeader, MDBFileInfo};
 use mdb_shard::shard_dedup_probe::ShardDedupProber;
@@ -75,7 +75,7 @@ impl RegistrationClient for HttpShardClient {
         force_sync: bool,
         shard_data: &[u8],
         _salt: &[u8; 32],
-    ) -> Result<bool> {
+    ) -> Result<UploadShardResponse> {
         let key = Key {
             prefix: prefix.into(),
             hash: *hash,
@@ -101,10 +101,7 @@ impl RegistrationClient for HttpShardClient {
         let response_body = response.bytes().await?;
         let response_parsed: UploadShardResponse = serde_json::from_reader(response_body.reader())?;
 
-        match response_parsed.result {
-            UploadShardResponseType::Exists => Ok(false),
-            UploadShardResponseType::SyncPerformed => Ok(true),
-        }
+        Ok(response_parsed)
     }
 }
 

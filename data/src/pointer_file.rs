@@ -15,10 +15,10 @@ const CURRENT_VERSION: &str = "0";
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct PointerFile {
     /// The version string of the pointer file
-    version_string: String,
+    pub version_string: String,
 
     /// The initial path supplied (to a pointer file on disk)
-    path: String,
+    pub path: String,
 
     /// Whether the contents represent a valid pointer file.
     /// is_valid is true if and only if all of the following are true:
@@ -26,13 +26,15 @@ pub struct PointerFile {
     /// * the whole contents are valid TOML
     /// * the TOML contains a top level key "hash" that is a String
     /// * the TOML contains a top level key "filesize" that is an Integer
-    is_valid: bool,
+    pub is_valid: bool,
 
     /// The Merkle hash of the file pointed to by this pointer file
-    hash: String,
+    pub hash: String,
 
     /// The size of the file pointed to by this pointer file
-    filesize: u64,
+    pub filesize: u64,
+
+    pub sha_hash: String,
 }
 
 impl PointerFile {
@@ -54,11 +56,12 @@ impl PointerFile {
             // # xet version <x.y>
             is_valid = false;
             return PointerFile {
-                version_string: empty_string,
+                version_string: empty_string.clone(),
                 path: path.to_string(),
                 is_valid,
                 hash,
                 filesize,
+                sha_hash: empty_string,
             };
         }
 
@@ -73,6 +76,7 @@ impl PointerFile {
                 is_valid,
                 hash,
                 filesize,
+                sha_hash: empty_string,
             };
         }
 
@@ -117,6 +121,7 @@ impl PointerFile {
             is_valid,
             hash,
             filesize,
+            sha_hash: "".to_string(),
         }
     }
 
@@ -132,8 +137,9 @@ impl PointerFile {
             version_string: empty_string.clone(),
             path: path.to_owned(),
             is_valid: false,
-            hash: empty_string,
+            hash: empty_string.clone(),
             filesize: 0,
+            sha_hash: empty_string,
         };
 
         let Ok(file_meta) = fs::metadata(path).map_err(|e| {
@@ -156,13 +162,14 @@ impl PointerFile {
         PointerFile::init_from_string(&contents, path)
     }
 
-    pub fn init_from_info(path: &str, hash: &str, filesize: u64) -> Self {
+    pub fn init_from_info(path: &str, hash: &str, filesize: u64, sha_hash: &str) -> Self {
         Self {
             version_string: CURRENT_VERSION.to_string(),
             path: path.to_string(),
             is_valid: true,
             hash: hash.to_string(),
             filesize,
+            sha_hash: sha_hash.to_string(),
         }
     }
 

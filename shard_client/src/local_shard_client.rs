@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use cas_types::{UploadShardResponse, UploadShardResponseType};
 use itertools::Itertools;
 use mdb_shard::file_structs::MDBFileInfo;
 use mdb_shard::shard_dedup_probe::ShardDedupProber;
@@ -61,7 +62,7 @@ impl RegistrationClient for LocalShardClient {
         _force_sync: bool,
         shard_data: &[u8],
         salt: &[u8; 32],
-    ) -> Result<bool> {
+    ) -> Result<UploadShardResponse> {
         // Write out the shard to the shard directory.
         let shard = MDBShardFile::write_out_from_reader(
             &self.shard_directory,
@@ -79,7 +80,10 @@ impl RegistrationClient for LocalShardClient {
             .batch_add(&chunk_hashes, hash, prefix, salt)
             .await?;
 
-        Ok(true)
+        Ok(UploadShardResponse {
+            result: UploadShardResponseType::SyncPerformed,
+            sha_mapping: None,
+        })
     }
 }
 

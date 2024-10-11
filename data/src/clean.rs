@@ -606,6 +606,7 @@ impl Cleaner {
                 .unwrap_or_default(),
             &hash.hex(),
             filesize,
+            "",
         );
         Ok(pointer_file.to_string())
     }
