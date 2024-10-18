@@ -37,6 +37,18 @@ impl CASChunkSequenceHeader {
         }
     }
 
+    pub fn bookend() -> Self {
+        Self {
+            // Use all 1s to denote a bookend hash.
+            cas_hash: [!0u64; 4].into(),
+            ..Default::default()
+        }
+    }
+
+    pub fn is_bookend(&self) -> bool {
+        self.cas_hash == [!0u64; 4].into()
+    }
+
     pub fn new_with_compression<I1: TryInto<u32>, I2: TryInto<u32> + Copy>(
         cas_hash: MerkleHash,
         num_entries: I1,
@@ -163,15 +175,20 @@ impl MDBCASInfo {
             + self.chunks.len() * size_of::<CASChunkSequenceEntry>()) as u64
     }
 
-    pub fn deserialize<R: Read>(reader: &mut R) -> Result<Self, std::io::Error> {
+    pub fn deserialize<R: Read>(reader: &mut R) -> Result<Option<Self>, std::io::Error> {
         let metadata = CASChunkSequenceHeader::deserialize(reader)?;
+
+        // This is the single bookend entry as a guard for sequential reading.
+        if metadata.is_bookend() {
+            return Ok(None);
+        }
 
         let mut chunks = Vec::with_capacity(metadata.num_entries as usize);
         for _ in 0..metadata.num_entries {
             chunks.push(CASChunkSequenceEntry::deserialize(reader)?);
         }
 
-        Ok(Self { metadata, chunks })
+        Ok(Some(Self { metadata, chunks }))
     }
 
     pub fn serialize<W: Write>(&self, writer: &mut W) -> Result<usize, std::io::Error> {
