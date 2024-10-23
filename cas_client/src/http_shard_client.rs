@@ -1,10 +1,10 @@
-use crate::error::{Result, ShardClientError};
-use crate::{RegistrationClient, ShardClientInterface};
+use crate::error::{CasClientError, Result};
+use crate::{build_auth_http_client, RegistrationClient, ShardClientInterface};
 use async_trait::async_trait;
 use bytes::Buf;
-use cas_client::build_reqwest_client;
 use cas_types::Key;
 use cas_types::{QueryReconstructionResponse, UploadShardResponse};
+use error_printer::ErrorPrinter;
 use file_utils::write_all_safe;
 use mdb_shard::file_structs::{FileDataSequenceEntry, FileDataSequenceHeader, MDBFileInfo};
 use mdb_shard::shard_dedup_probe::ShardDedupProber;
@@ -12,24 +12,21 @@ use mdb_shard::shard_file_reconstructor::FileReconstructor;
 use merklehash::MerkleHash;
 use reqwest::Url;
 use reqwest_middleware::ClientWithMiddleware;
-use retry_strategy::RetryStrategy;
 use std::io::Read;
 use std::path::PathBuf;
 use std::str::FromStr;
 use tokio::task::JoinSet;
-use tracing::warn;
 use utils::auth::AuthConfig;
 use utils::serialization_utils::read_u32;
 
-const NUM_RETRIES: usize = 5;
-const BASE_RETRY_DELAY_MS: u64 = 3000;
+const FORCE_SYNC_METHOD: reqwest::Method = reqwest::Method::PUT;
+const NON_FORCE_SYNC_METHOD: reqwest::Method = reqwest::Method::POST;
 
 /// Shard Client that uses HTTP for communication.
 #[derive(Debug)]
 pub struct HttpShardClient {
     endpoint: String,
     client: ClientWithMiddleware,
-    retry_strategy: RetryStrategy,
     cache_directory: Option<PathBuf>,
 }
 
@@ -39,31 +36,13 @@ impl HttpShardClient {
         auth_config: &Option<AuthConfig>,
         shard_cache_directory: Option<PathBuf>,
     ) -> Self {
-        let client = build_reqwest_client(auth_config).unwrap();
+        let client = build_auth_http_client(auth_config, &None).unwrap();
         HttpShardClient {
             endpoint: endpoint.into(),
             client,
-            // Retry policy: Exponential backoff starting at BASE_RETRY_DELAY_MS and retrying NUM_RETRIES times
-            retry_strategy: RetryStrategy::new(NUM_RETRIES, BASE_RETRY_DELAY_MS),
             cache_directory: shard_cache_directory.clone(),
         }
     }
-}
-
-fn retry_http_status_code(stat: &reqwest::StatusCode) -> bool {
-    stat.is_server_error() || *stat == reqwest::StatusCode::TOO_MANY_REQUESTS
-}
-
-fn is_status_retriable_and_print(err: &reqwest_middleware::Error) -> bool {
-    let ret = err
-        .status()
-        .as_ref()
-        .map(retry_http_status_code)
-        .unwrap_or(true); // network issues should be retried
-    if ret {
-        warn!("{err:?}. Retrying...");
-    }
-    ret
 }
 
 #[async_trait]
@@ -83,30 +62,32 @@ impl RegistrationClient for HttpShardClient {
 
         let url = Url::parse(&format!("{}/shard/{key}", self.endpoint))?;
 
-        let response = self
-            .retry_strategy
-            .retry(
-                || async {
-                    let url = url.clone();
-                    match force_sync {
-                        true => self.client.put(url).body(shard_data.to_vec()).send().await,
-                        false => self.client.post(url).body(shard_data.to_vec()).send().await,
-                    }
-                },
-                is_status_retriable_and_print,
-            )
-            .await
-            .map_err(|e| ShardClientError::Other(format!("request failed with code {e}")))?;
+        let method = match force_sync {
+            true => FORCE_SYNC_METHOD,
+            false => NON_FORCE_SYNC_METHOD,
+        };
 
-        let response_body = response.bytes().await?;
-        let response_parsed: UploadShardResponse = serde_json::from_reader(response_body.reader())?;
+        let response = self
+            .client
+            .request(method, url)
+            .body(shard_data.to_vec())
+            .send()
+            .await
+            .log_error("failed request to upload_shard")?
+            .error_for_status()
+            .log_error("error status on upload_shard")?;
+
+        let response_parsed: UploadShardResponse = response
+            .json()
+            .await
+            .log_error("error json decoding upload_shard response")?;
 
         Ok(response_parsed)
     }
 }
 
 #[async_trait]
-impl FileReconstructor<ShardClientError> for HttpShardClient {
+impl FileReconstructor<CasClientError> for HttpShardClient {
     async fn get_file_reconstruction_info(
         &self,
         file_hash: &MerkleHash,
@@ -116,30 +97,22 @@ impl FileReconstructor<ShardClientError> for HttpShardClient {
             self.endpoint,
             file_hash.hex()
         ))?;
-        let response = self
-            .retry_strategy
-            .retry(
-                || async {
-                    let url = url.clone();
-                    self.client.get(url).send().await
-                },
-                is_status_retriable_and_print,
-            )
-            .await
-            .map_err(|e| ShardClientError::Other(format!("request failed with code {e}")))?;
 
-        let response_body = response.bytes().await?;
-        let response_info: QueryReconstructionResponse =
-            serde_json::from_reader(response_body.reader())?;
+        let response = self
+            .client
+            .get(url)
+            .send()
+            .await
+            .log_error("error invoking reconstruction API")?
+            .error_for_status()
+            .log_error("reconstruction api error status")?;
+        let response_info: QueryReconstructionResponse = response.json().await?;
 
         Ok(Some((
             MDBFileInfo {
-                metadata: FileDataSequenceHeader::new(
-                    *file_hash,
-                    response_info.reconstruction.len(),
-                ),
+                metadata: FileDataSequenceHeader::new(*file_hash, response_info.terms.len(), false),
                 segments: response_info
-                    .reconstruction
+                    .terms
                     .into_iter()
                     .map(|ce| {
                         FileDataSequenceEntry::new(
@@ -150,6 +123,7 @@ impl FileReconstructor<ShardClientError> for HttpShardClient {
                         )
                     })
                     .collect(),
+                verification: vec![],
             },
             None,
         )))
@@ -157,7 +131,7 @@ impl FileReconstructor<ShardClientError> for HttpShardClient {
 }
 
 #[async_trait]
-impl ShardDedupProber<ShardClientError> for HttpShardClient {
+impl ShardDedupProber<CasClientError> for HttpShardClient {
     async fn get_dedup_shards(
         &self,
         prefix: &str,
@@ -166,7 +140,7 @@ impl ShardDedupProber<ShardClientError> for HttpShardClient {
     ) -> Result<Vec<MerkleHash>> {
         debug_assert!(chunk_hash.len() == 1);
         let Some(shard_cache_dir) = &self.cache_directory else {
-            return Err(ShardClientError::InvalidConfig(
+            return Err(CasClientError::ConfigurationError(
                 "cache directory not configured for shard storage".into(),
             ));
         };
@@ -179,18 +153,13 @@ impl ShardDedupProber<ShardClientError> for HttpShardClient {
         };
 
         let url = Url::parse(&format!("{0}/chunk/{key}", self.endpoint))?;
-        let response = self
-            .retry_strategy
-            .retry(
-                || async {
-                    let url = url.clone();
-                    self.client.get(url).send().await
-                },
-                is_status_retriable_and_print,
-            )
-            .await
-            .map_err(|e| ShardClientError::Other(format!("request failed with code {e}")))?;
 
+        let response = self
+            .client
+            .get(url)
+            .send()
+            .await
+            .map_err(|e| CasClientError::Other(format!("request failed with code {e}")))?;
         let response_body = response.bytes().await?;
         let mut reader = response_body.reader();
 
@@ -217,9 +186,9 @@ impl ShardDedupProber<ShardClientError> for HttpShardClient {
             reader.read_exact(&mut shard_key)?;
 
             let shard_key = String::from_utf8(shard_key)
-                .map_err(|e| ShardClientError::InvalidShardKey(format!("{e:?}")))?;
+                .map_err(|e| CasClientError::InvalidShardKey(format!("{e:?}")))?;
             let shard_key = Key::from_str(&shard_key)
-                .map_err(|e| ShardClientError::InvalidShardKey(format!("{e:?}")))?;
+                .map_err(|e| CasClientError::InvalidShardKey(format!("{e:?}")))?;
             downloaded_shards.push(shard_key.hash);
 
             let shard_content_length = read_u32(&mut reader)?;
@@ -235,7 +204,7 @@ impl ShardDedupProber<ShardClientError> for HttpShardClient {
         }
 
         while let Some(res) = write_join_set.join_next().await {
-            res.map_err(|e| ShardClientError::Other(format!("Internal task error: {e:?}")))??;
+            res.map_err(|e| CasClientError::Other(format!("Internal task error: {e:?}")))??;
         }
 
         Ok(downloaded_shards)
@@ -290,7 +259,7 @@ mod test {
 
         // test file reconstruction lookup
         let files = MDBShardInfo::read_file_info_ranges(&mut reader)?;
-        for (file_hash, _) in files {
+        for (file_hash, _, _) in files {
             let expected = shard.get_file_reconstruction_info(&file_hash)?.unwrap();
             let (result, _) = client
                 .get_file_reconstruction_info(&file_hash)
@@ -301,7 +270,7 @@ mod test {
         }
 
         // test chunk dedup lookup
-        let chunks = MDBShardInfo::read_cas_chunks_for_global_dedup(&mut reader)?;
+        let chunks = MDBShardInfo::filter_cas_chunks_for_global_dedup(&mut reader)?;
         for chunk in chunks {
             let expected = shard_hash;
             let result = client

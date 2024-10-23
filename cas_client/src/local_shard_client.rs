@@ -10,7 +10,7 @@ use merklehash::MerkleHash;
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
 
-use crate::error::ShardClientError;
+use crate::error::CasClientError;
 use crate::{
     error::Result, global_dedup_table::DiskBasedGlobalDedupTable, RegistrationClient,
     ShardClientInterface,
@@ -30,7 +30,7 @@ impl LocalShardClient {
         let shard_directory = cas_directory.join("shards");
         if !shard_directory.exists() {
             std::fs::create_dir_all(&shard_directory).map_err(|e| {
-                ShardClientError::Other(format!(
+                CasClientError::Other(format!(
                     "Error creating local shard directory {shard_directory:?}: {e:?}."
                 ))
             })?;
@@ -74,7 +74,7 @@ impl RegistrationClient for LocalShardClient {
         // Add dedup info to the global dedup table.
         let mut shard_reader = Cursor::new(shard_data);
 
-        let chunk_hashes = MDBShardInfo::read_cas_chunks_for_global_dedup(&mut shard_reader)?;
+        let chunk_hashes = MDBShardInfo::filter_cas_chunks_for_global_dedup(&mut shard_reader)?;
 
         self.global_dedup
             .batch_add(&chunk_hashes, hash, prefix, salt)
@@ -88,7 +88,7 @@ impl RegistrationClient for LocalShardClient {
 }
 
 #[async_trait]
-impl FileReconstructor<ShardClientError> for LocalShardClient {
+impl FileReconstructor<CasClientError> for LocalShardClient {
     /// Query the shard server for the file reconstruction info.
     /// Returns the FileInfo for reconstructing the file and the shard ID that
     /// defines the file info.
@@ -104,7 +104,7 @@ impl FileReconstructor<ShardClientError> for LocalShardClient {
 }
 
 #[async_trait]
-impl ShardDedupProber<ShardClientError> for LocalShardClient {
+impl ShardDedupProber<CasClientError> for LocalShardClient {
     async fn get_dedup_shards(
         &self,
         prefix: &str,
