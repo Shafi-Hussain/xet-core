@@ -1,26 +1,28 @@
+use std::collections::HashMap;
+use std::ffi::OsStr;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
+
+use cas_client::ShardClientInterface;
+use lru::LruCache;
+use mdb_shard::constants::MDB_SHARD_MIN_TARGET_SIZE;
+use mdb_shard::error::MDBShardError;
+use mdb_shard::file_structs::MDBFileInfo;
+use mdb_shard::session_directory::consolidate_shards_in_directory;
+use mdb_shard::shard_file_manager::ShardFileManager;
+use mdb_shard::shard_file_reconstructor::FileReconstructor;
+use mdb_shard::MDBShardFile;
+use merklehash::MerkleHash;
+use parutils::tokio_par_for_each;
+use tokio::task::JoinHandle;
+use tracing::{debug, info};
+
 use super::configurations::{FileQueryPolicy, StorageConfig};
 use super::errors::{DataProcessingError, Result};
 use super::shard_interface::{create_shard_client, create_shard_manager};
 use crate::cas_interface::Client;
 use crate::constants::{FILE_RECONSTRUCTION_CACHE_SIZE, MAX_CONCURRENT_UPLOADS};
 use crate::repo_salt::RepoSalt;
-use cas_client::ShardClientInterface;
-use lru::LruCache;
-use mdb_shard::constants::MDB_SHARD_MIN_TARGET_SIZE;
-use mdb_shard::session_directory::consolidate_shards_in_directory;
-use mdb_shard::{
-    error::MDBShardError, file_structs::MDBFileInfo, shard_file_manager::ShardFileManager,
-    shard_file_reconstructor::FileReconstructor, MDBShardFile,
-};
-use merklehash::MerkleHash;
-use parutils::tokio_par_for_each;
-use std::collections::HashMap;
-use std::ffi::OsStr;
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
-use std::sync::Mutex;
-use tokio::task::JoinHandle;
-use tracing::{debug, info};
 
 pub struct RemoteShardInterface {
     pub file_query_policy: FileQueryPolicy,
@@ -33,8 +35,7 @@ pub struct RemoteShardInterface {
     pub cas: Option<Arc<dyn Client + Send + Sync>>,
     pub shard_manager: Option<Arc<ShardFileManager>>,
     pub shard_client: Option<Arc<dyn ShardClientInterface>>,
-    pub reconstruction_cache:
-        Mutex<LruCache<merklehash::MerkleHash, (MDBFileInfo, Option<MerkleHash>)>>,
+    pub reconstruction_cache: Mutex<LruCache<merklehash::MerkleHash, (MDBFileInfo, Option<MerkleHash>)>>,
 }
 
 impl RemoteShardInterface {
@@ -63,20 +64,16 @@ impl RemoteShardInterface {
             }
         };
 
-        let shard_manager =
-            if file_query_policy != FileQueryPolicy::ServerOnly && shard_manager.is_none() {
-                Some(Arc::new(create_shard_manager(shard_storage_config).await?))
-            } else {
-                shard_manager
-            };
+        let shard_manager = if file_query_policy != FileQueryPolicy::ServerOnly && shard_manager.is_none() {
+            Some(Arc::new(create_shard_manager(shard_storage_config).await?))
+        } else {
+            shard_manager
+        };
 
         Ok(Arc::new(Self {
             file_query_policy,
             shard_prefix: shard_storage_config.prefix.clone(),
-            shard_cache_directory: shard_storage_config
-                .cache_config
-                .as_ref()
-                .map(|cf| cf.cache_directory.clone()),
+            shard_cache_directory: shard_storage_config.cache_config.as_ref().map(|cf| cf.cache_directory.clone()),
             shard_session_directory: shard_storage_config.staging_directory.clone(),
             repo_salt,
             shard_manager,
@@ -130,9 +127,7 @@ impl RemoteShardInterface {
 
     fn shard_cache_directory(&self) -> Result<PathBuf> {
         let Some(cache_dir) = self.shard_cache_directory.clone() else {
-            return Err(DataProcessingError::ShardConfigError(
-                "cache directory not configured".to_owned(),
-            ));
+            return Err(DataProcessingError::ShardConfigError("cache directory not configured".to_owned()));
         };
 
         Ok(cache_dir)
@@ -140,9 +135,7 @@ impl RemoteShardInterface {
 
     fn shard_session_directory(&self) -> Result<PathBuf> {
         let Some(session_dir) = self.shard_session_directory.clone() else {
-            return Err(DataProcessingError::ShardConfigError(
-                "staging directory not configured".to_owned(),
-            ));
+            return Err(DataProcessingError::ShardConfigError("staging directory not configured".to_owned()));
         };
 
         Ok(session_dir)
@@ -157,10 +150,7 @@ impl RemoteShardInterface {
             return Ok(None);
         }
 
-        Ok(self
-            .shard_client()?
-            .get_file_reconstruction_info(file_hash)
-            .await?)
+        Ok(self.shard_client()?.get_file_reconstruction_info(file_hash).await?)
     }
 
     async fn get_file_reconstruction_info_impl(
@@ -174,9 +164,8 @@ impl RemoteShardInterface {
                     .as_ref()
                     .ok_or_else(|| {
                         MDBShardError::SmudgeQueryPolicyError(
-                        "Require ShardFileManager for smudge query policy other than 'server_only'"
-                            .to_owned(),
-                    )
+                            "Require ShardFileManager for smudge query policy other than 'server_only'".to_owned(),
+                        )
                     })?
                     .get_file_reconstruction_info(file_hash)
                     .await?;
@@ -184,22 +173,16 @@ impl RemoteShardInterface {
                 if local_info.is_some() {
                     Ok(local_info)
                 } else {
-                    Ok(self
-                        .query_server_for_file_reconstruction_info(file_hash)
-                        .await?)
+                    Ok(self.query_server_for_file_reconstruction_info(file_hash).await?)
                 }
-            }
-            FileQueryPolicy::ServerOnly => {
-                self.query_server_for_file_reconstruction_info(file_hash)
-                    .await
-            }
+            },
+            FileQueryPolicy::ServerOnly => self.query_server_for_file_reconstruction_info(file_hash).await,
             FileQueryPolicy::LocalOnly => Ok(self
                 .shard_manager
                 .as_ref()
                 .ok_or_else(|| {
                     MDBShardError::SmudgeQueryPolicyError(
-                        "Require ShardFileManager for smudge query policy other than 'server_only'"
-                            .to_owned(),
+                        "Require ShardFileManager for smudge query policy other than 'server_only'".to_owned(),
                     )
                 })?
                 .get_file_reconstruction_info(file_hash)
@@ -222,12 +205,9 @@ impl RemoteShardInterface {
             Ok(None) => Ok(None),
             Ok(Some(contents)) => {
                 // we only cache real stuff
-                self.reconstruction_cache
-                    .lock()
-                    .unwrap()
-                    .put(*file_hash, contents.clone());
+                self.reconstruction_cache.lock().unwrap().put(*file_hash, contents.clone());
                 Ok(Some(contents))
-            }
+            },
             Err(e) => Err(e),
         }
     }
@@ -235,23 +215,14 @@ impl RemoteShardInterface {
     /// Probes which shards provides dedup information for a chunk.
     /// Returns a list of shard hashes with key under 'prefix',
     /// Err(_) if an error occured.
-    async fn get_dedup_shards(
-        &self,
-        chunk_hash: &[MerkleHash],
-        salt: &RepoSalt,
-    ) -> Result<Vec<MerkleHash>> {
+    async fn get_dedup_shards(&self, chunk_hash: &[MerkleHash], salt: &RepoSalt) -> Result<Vec<MerkleHash>> {
         if chunk_hash.is_empty() {
             return Ok(vec![]);
         }
 
         if let Some(shard_client) = self.shard_client.as_ref() {
-            debug!(
-                "get_dedup_shards: querying for shards with chunk {:?}",
-                chunk_hash[0]
-            );
-            Ok(shard_client
-                .get_dedup_shards(&self.shard_prefix, chunk_hash, salt)
-                .await?)
+            debug!("get_dedup_shards: querying for shards with chunk {:?}", chunk_hash[0]);
+            Ok(shard_client.get_dedup_shards(&self.shard_prefix, chunk_hash, salt).await?)
         } else {
             Ok(vec![])
         }
@@ -278,29 +249,21 @@ impl RemoteShardInterface {
 
         let shard_file = cache_dir.join(local_shard_name(shard_hash));
 
-        shard_manager
-            .load_and_cleanup_shards_by_path(&[shard_file])
-            .await?;
+        shard_manager.load_and_cleanup_shards_by_path(&[shard_file]).await?;
 
         Ok(())
     }
 
-    pub fn merge_shards(
-        &self,
-    ) -> Result<JoinHandle<std::result::Result<Vec<MDBShardFile>, MDBShardError>>> {
+    pub fn merge_shards(&self) -> Result<JoinHandle<std::result::Result<Vec<MDBShardFile>, MDBShardError>>> {
         let session_dir = self.shard_session_directory()?;
 
-        let merged_shards_jh = tokio::spawn(async move {
-            consolidate_shards_in_directory(&session_dir, MDB_SHARD_MIN_TARGET_SIZE)
-        });
+        let merged_shards_jh =
+            tokio::spawn(async move { consolidate_shards_in_directory(&session_dir, MDB_SHARD_MIN_TARGET_SIZE) });
 
         Ok(merged_shards_jh)
     }
 
-    pub async fn upload_and_register_shards(
-        &self,
-        shards: Vec<MDBShardFile>,
-    ) -> Result<HashMap<String, String>> {
+    pub async fn upload_and_register_shards(&self, shards: Vec<MDBShardFile>) -> Result<HashMap<String, String>> {
         if shards.is_empty() {
             return Ok(HashMap::new());
         }
@@ -316,10 +279,7 @@ impl RemoteShardInterface {
             // 1. Upload directly to CAS.
             // 2. Sync to server.
 
-            debug!(
-                "Uploading shard {shard_prefix_ref}/{:?} from staging area to CAS.",
-                &si.shard_hash
-            );
+            debug!("Uploading shard {shard_prefix_ref}/{:?} from staging area to CAS.", &si.shard_hash);
             let data = std::fs::read(&si.path)?;
 
             // Upload the shard.
@@ -327,28 +287,20 @@ impl RemoteShardInterface {
                 .upload_shard(&self.shard_prefix, &si.shard_hash, false, &data, &salt)
                 .await?;
 
-            info!(
-                "Shard {shard_prefix_ref}/{:?} upload + sync completed successfully.",
-                &si.shard_hash
-            );
+            info!("Shard {shard_prefix_ref}/{:?} upload + sync completed successfully.", &si.shard_hash);
 
             Ok(result.sha_mapping)
         })
         .await
         .map_err(|e| match e {
-            parutils::ParallelError::JoinError => {
-                DataProcessingError::InternalError("Join Error".into())
-            }
+            parutils::ParallelError::JoinError => DataProcessingError::InternalError("Join Error".into()),
             parutils::ParallelError::TaskError(e) => e,
         })?;
 
-        let merged_map = maps
-            .into_iter()
-            .filter_map(|x| x)
-            .fold(HashMap::new(), |mut acc, x| {
-                acc.extend(x);
-                acc
-            });
+        let merged_map = maps.into_iter().filter_map(|x| x).fold(HashMap::new(), |mut acc, x| {
+            acc.extend(x);
+            acc
+        });
 
         Ok(merged_map)
     }
