@@ -20,7 +20,6 @@ error_printer = { path = "../error_printer" }
 data = { path = "../data" }
 utils = { path = "../utils" }
 tokio = { version = "1.36", features = ["full"] }
-parutils = { path = "../parutils" }
 tracing = "0.1.*"
 tracing-subscriber = { version = "0.3", features = [
     "json",
