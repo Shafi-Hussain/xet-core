@@ -3,7 +3,7 @@ mod disk;
 pub mod error;
 
 use std::path::PathBuf;
-
+use async_trait::async_trait;
 pub use cache_manager::get_cache;
 use cas_types::{ChunkRange, Key};
 pub use disk::test_utils::*;
@@ -56,6 +56,20 @@ pub trait ChunkCache: Sync + Send {
         data: &[u8],
     ) -> Result<(), ChunkCacheError>;
 }
+
+#[automock]
+#[async_trait::async_trait]
+pub trait ChunkCache2: Sync + Send {
+    fn get(&self, key: &Key, range: &ChunkRange) -> Result<Option<Vec<u8>>, ChunkCacheError>;
+    async fn enqueue_put(
+        &self,
+        key: &Key,
+        range: &ChunkRange,
+        chunk_byte_indices: &[u32],
+        data: &[u8],
+    ) -> Result<(), ChunkCacheError>;
+}
+
 
 #[derive(Debug, Clone)]
 pub struct CacheConfig {
