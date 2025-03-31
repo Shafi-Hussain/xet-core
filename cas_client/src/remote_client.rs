@@ -309,6 +309,8 @@ impl RemoteClient {
             terms.iter().fold(0, |acc, x| acc + x.unpacked_length as u64)
         };
 
+        progress_updater.as_ref().inspect(|updater| updater.set_total(total_len));
+
         let futs_iter = terms.into_iter().map(|term| {
             get_one_term(
                 self.http_client.clone(),
