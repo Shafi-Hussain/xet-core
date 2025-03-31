@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::mem::{swap, take};
 use std::sync::Arc;
 
@@ -80,9 +80,6 @@ pub struct FileUploadSession {
     /// completion tracker.
     session_xorbs: Mutex<HashSet<MerkleHash>>,
 
-    /// The files in this session; this is needed to register a new xorb for completion
-    session_files: Mutex<HashMap<MerkleHash, CompletionTrackerFileId>>,
-
     #[cfg(debug_assertions)]
     progress_verification_tracker: Arc<ProgressUpdaterVerificationWrapper>,
 }
@@ -156,7 +153,6 @@ impl FileUploadSession {
             deduplication_metrics: Mutex::new(DeduplicationMetrics::default()),
             xorb_upload_tasks: Mutex::new(JoinSet::new()),
             session_xorbs: Mutex::new(HashSet::new()),
-            session_files: Mutex::new(HashMap::new()),
 
             #[cfg(debug_assertions)]
             progress_verification_tracker,
@@ -239,16 +235,9 @@ impl FileUploadSession {
     /// Meant to be called by the finalize() method of the SingleFileCleaner
     pub(crate) async fn register_single_file_clean_completion(
         self: &Arc<Self>,
-        file_hash: MerkleHash,
-        file_id: CompletionTrackerFileId,
         mut file_data: DataAggregator,
         dedup_metrics: &DeduplicationMetrics,
     ) -> Result<()> {
-        // This will track a mapping of file hash to file id, which is required
-        // by the completion tracker when we upload the xorb having any remaining parts
-        // of this file in it.
-        self.session_files.lock().await.insert(file_hash, file_id);
-
         // Merge in the remaining file data; uploading a new xorb if need be.
         {
             let mut current_session_data = self.current_session_data.lock().await;

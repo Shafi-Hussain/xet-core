@@ -116,7 +116,7 @@ impl SingleFileCleaner {
 
         // Now, return all this information to the
         self.session
-            .register_single_file_clean_completion(file_hash, self.file_id, remaining_file_data, &deduplication_metrics)
+            .register_single_file_clean_completion(remaining_file_data, &deduplication_metrics)
             .await?;
 
         // NB: xorb upload is happening in the background, this number is optimistic since it does
