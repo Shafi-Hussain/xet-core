@@ -12,8 +12,8 @@ pub struct ProgressUpdate {
     pub update_increment: u64,
 }
 
-/// ProgressUpdater helper to updater some component that progress
-/// has occurred.
+/// A simple progress updater that simply reports when
+/// progress has occured.
 pub trait SimpleProgressUpdater: Debug + Send + Sync {
     /// updater takes 1 parameter which is an increment value to progress
     /// **not the total progress value**
@@ -23,8 +23,10 @@ pub trait SimpleProgressUpdater: Debug + Send + Sync {
     fn set_total(&self, _n_units: u64) {}
 }
 
+/// The trait that a progress updater that reports per-item progress completion.
 pub trait TrackingProgressUpdater: Debug + Send + Sync {
-    /// Register a block of updates as a list of (name, completed_bytes, total_bytes) tuples
+    /// Register a set of updates as a list of ProgressUpdate instances, which
+    /// contain the name and progress information.    
     fn register_updates(&self, updates: &[ProgressUpdate]);
 }
 

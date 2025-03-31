@@ -340,17 +340,17 @@ mod tests {
     /// 1) Several identical files, each smaller than MAX_XORB_BYTES.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn test_several_identical_multipart() {
-        // Let's make 5 identical files, each identical
-        let file_specs: Vec<(String, Vec<(u64, u64)>)> = (0..2)
-            .map(|i| (format!("identical_{i}"), vec![(123, *MAX_XORB_BYTES as u64)]))
+        // Let's make 16 identical files, each identical
+        let file_specs: Vec<(String, Vec<(u64, u64)>)> = (0..16)
+            .map(|i| (format!("identical_{i}"), vec![(123, *MAX_XORB_BYTES as u64 / 2)]))
             .collect();
 
         check_clean_smudge_files_multipart(&file_specs).await;
     }
 
-    /// 2) 100 identical files, each larger than MAX_XORB_BYTES.
+    /// 2) many identical files, each larger than MAX_XORB_BYTES.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn test_identical_files_larger_than_max_xorb() {
+    async fn test_identical_files_slightly_larger_than_max_xorb() {
         // single segment that exceeds MAX_XORB_BYTES
         let big_size = (*MAX_XORB_BYTES as u64) + 1;
         let segments = vec![(9999, big_size)];
@@ -361,7 +361,19 @@ mod tests {
         check_clean_smudge_files_multipart(&file_specs).await;
     }
 
-    /// 3) 100 files, each with a unique portion plus a large common portion bigger than MAX_XORB_BYTES/2.
+    /// 3) many files, each with a unique portion plus a large common portion bigger than MAX_XORB_BYTES/2.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_many_files_unique_plus_small_common() {
+        let block_size = (*MAX_XORB_BYTES as u64) / 2;
+        // Each file has two segments: (i, 2048) -> unique seed, (999, half) -> common chunk
+        let file_specs: Vec<(String, Vec<(u64, u64)>)> = (0..32)
+            .map(|i| (format!("file_{i}"), vec![(i, block_size), (999, block_size)]))
+            .collect();
+
+        check_clean_smudge_files_multipart(&file_specs).await;
+    }
+
+    /// 3) many files, each with a unique portion plus a large common portion bigger than MAX_XORB_BYTES/2.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn test_many_files_unique_plus_large_common() {
         let block_size = (*MAX_XORB_BYTES as u64) + 10;
