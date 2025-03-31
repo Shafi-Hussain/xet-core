@@ -15,8 +15,6 @@ use rand::{RngCore, SeedableRng};
 use safe_transmute::{transmute_to_bytes, transmute_to_bytes_mut};
 use serde::{Deserialize, Serialize};
 
-use crate::MerkleHash;
-
 /************************************************************************* */
 /*  */
 /* DataHash */
@@ -208,7 +206,7 @@ impl DataHash {
         Ok(hash)
     }
 
-    pub fn random_from_seed(seed: u64) -> MerkleHash {
+    pub fn random_from_seed(seed: u64) -> Self {
         let mut s = Self::default();
         let mut rng = SmallRng::seed_from_u64(seed);
         rng.fill_bytes(transmute_to_bytes_mut(&mut s.0[..]));
