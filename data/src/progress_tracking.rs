@@ -23,7 +23,6 @@ struct XorbDependency {
 }
 
 /// Represents a file that depends on one or more xorbs.
-#[derive(Default)]
 struct FileDependency {
     /// Human-readable name of the file.
     name: Arc<str>,
