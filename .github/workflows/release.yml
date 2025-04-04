@@ -98,19 +98,22 @@ jobs:
           before-script-linux: |
             set -x
             yum install openssl-devel libatomic_ops-devel perl-IPC-Cmd pkg-config perl -y
-            PUBKEY=gpg-pubkey-615d762f-62f504a1
-            curl https://public.dhe.ibm.com/software/server/POWER/Linux/toolchain/at/redhat/RHEL9/$PUBKEY -o KEY
-            rpm --import KEY
-            cat <<EOF> /etc/yum.repos.d/advance-toolchain.repo
-            [advance-toolchain]
-            name=Advance Toolchain IBM FTP
-            baseurl=https://public.dhe.ibm.com/software/server/POWER/Linux/toolchain/at/redhat/RHEL9
-            enabled=1
-            gpgcheck=1
-            gpgkey=https://public.dhe.ibm.com/software/server/POWER/Linux/toolchain/at/redhat/RHEL9/$PUBKEY
-            EOF
-            yum install -y advance-toolchain-at17.0-cross*
-            export PATH=/opt/at17.0/bin/:/opt/at17.0/lib:/opt/at17.0/powerpc64le-linux-gnu/bin/:/opt/at17.0/powerpc64le-linux-gnu/lib64/:/opt/at17.0/powerpc64le-linux-gnu/lib:$PATH
+            export OPENSSL_DIR=/usr
+            export OPENSSL_LIB_DIR=/usr/lib64
+            export OPENSSL_INCLUDE_DIR=/usr/include
+            # PUBKEY=gpg-pubkey-615d762f-62f504a1
+            # curl https://public.dhe.ibm.com/software/server/POWER/Linux/toolchain/at/redhat/RHEL9/$PUBKEY -o KEY
+            # rpm --import KEY
+            # cat <<EOF> /etc/yum.repos.d/advance-toolchain.repo
+            # [advance-toolchain]
+            # name=Advance Toolchain IBM FTP
+            # baseurl=https://public.dhe.ibm.com/software/server/POWER/Linux/toolchain/at/redhat/RHEL9
+            # enabled=1
+            # gpgcheck=1
+            # gpgkey=https://public.dhe.ibm.com/software/server/POWER/Linux/toolchain/at/redhat/RHEL9/$PUBKEY
+            # EOF
+            # yum install -y advance-toolchain-at17.0-cross*
+            # export PATH=/opt/at17.0/bin/:/opt/at17.0/lib:/opt/at17.0/powerpc64le-linux-gnu/bin/:/opt/at17.0/powerpc64le-linux-gnu/lib64/:/opt/at17.0/powerpc64le-linux-gnu/lib:$PATH
         #   before-script-linux-ppc64le: |
         #     set -x
             
