@@ -75,7 +75,6 @@ jobs:
         with:
           # target: manylinux_2_34
           args: --release --features openssl_vendored --out dist
-          sccache: 'true'
           manylinux: manylinux_2_34
           working-directory: hf_xet
         #   before-script-linux-ppc64le: |
