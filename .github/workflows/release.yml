@@ -33,6 +33,10 @@ jobs:
             target: aarch64
             manylinux: manylinux_2_28
             features: "--features openssl_vendored"
+          - runner: ubuntu-22.04
+            target: ppc64le
+            manylinux: manylinux_2_34
+            features: "--features openssl_vendored"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
