@@ -73,7 +73,13 @@ jobs:
           path: hf_xet/dist
 
   linux-ppc64le:
-    runs-on: ubuntu-22.04
+    runs-on: ${{ matrix.platform.runner }}
+    strategy:
+      matrix:
+        platform:
+          - runner: ubuntu-22.04
+            target: ppc64le
+            manylinux: manylinux_2_34
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -84,9 +90,9 @@ jobs:
         # Ref: https://github.com/PyO3/maturin-action?tab=readme-ov-file
         uses: PyO3/maturin-action@v1
         with:
-          # target: manylinux_2_34
+          target: ${{ matrix.platform.target }}
           args: --release --out dist
-          manylinux: manylinux_2_34
+          manylinux: ${{ matrix.platform.manylinux }}
           working-directory: hf_xet
           before-script-linux: |
             yum install openssl-devel libatomic_ops-devel perl-IPC-Cmd pkg-config -y
