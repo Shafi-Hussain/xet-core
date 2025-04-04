@@ -62,7 +62,7 @@ jobs:
           path: hf_xet/dist
 
   linux-ppc64le:
-    runs-on: ${{ matrix.platform.runner }}
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
