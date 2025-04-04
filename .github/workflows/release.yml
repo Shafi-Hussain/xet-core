@@ -78,7 +78,7 @@ jobs:
       matrix:
         platform:
           - runner: ubuntu-22.04
-            target: ppc64le
+            target: powerpc64le-unknown-linux-gnu
             manylinux: manylinux_2_34
     steps:
       - uses: actions/checkout@v4
