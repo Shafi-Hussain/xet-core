@@ -97,7 +97,7 @@ jobs:
           working-directory: hf_xet
           before-script-linux: |
             set -x
-            yum install openssl-devel libatomic_ops-devel perl-IPC-Cmd pkg-config -y
+            yum install openssl-devel libatomic_ops-devel perl-IPC-Cmd pkg-config perl -y
             PUBKEY=gpg-pubkey-615d762f-62f504a1
             curl https://public.dhe.ibm.com/software/server/POWER/Linux/toolchain/at/redhat/RHEL9/$PUBKEY -o KEY
             rpm --import KEY
