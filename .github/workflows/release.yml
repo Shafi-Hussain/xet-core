@@ -77,8 +77,8 @@ jobs:
           args: --release --out dist
           manylinux: manylinux_2_34
           working-directory: hf_xet
-          # before-script-linux: |
-          #   yum install openssl-devel libatomic_ops-devel perl-IPC-Cmd -y
+          before-script-linux: |
+            yum install openssl-devel libatomic_ops-devel perl-IPC-Cmd pkg-config -y
         #   before-script-linux-ppc64le: |
         #     set -x
             
