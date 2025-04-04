@@ -51,10 +51,11 @@ jobs:
           manylinux: ${{ matrix.platform.manylinux }}
           working-directory: hf_xet
           before-script-linux: |
+            GLIBC=$(ldd --version | head -1 | grep -oE '[0-9]+\.[0-9]+')
             if command -v apt-get &> /dev/null; then
                 apt-get update && apt-get install libssl-dev libatomic-ops-dev -y
             elif command -v yum &> /dev/null; then
-                if $(ldd --version | head -1 | grep -oE '2.[0-9]+') -eq "2.34"; then
+                if  "${GLIBC}" == "2.34"; then
                     yum install openssl-devel libatomic_ops-devel perl-IPC-Cmd -y
                 else
                     yum install openssl-devel devtoolset-10-libatomic-devel perl-IPC-Cmd -y
