@@ -95,7 +95,7 @@ jobs:
             curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
             yum install openssl-devel libatomic_ops-devel perl-IPC-Cmd -y
             pip install maturin
-
+          run: |
             # build wheel
             maturin pep517 build-wheel --auditwheel=skip
       - name: Upload wheels
