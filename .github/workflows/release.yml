@@ -51,6 +51,7 @@ jobs:
           manylinux: ${{ matrix.platform.manylinux }}
           working-directory: hf_xet
           before-script-linux: |
+            set -x
             GLIBC=$(ldd --version | head -1 | grep -oE '[0-9]+\.[0-9]+')
             if command -v apt-get &> /dev/null; then
                 apt-get update && apt-get install libssl-dev libatomic-ops-dev -y
