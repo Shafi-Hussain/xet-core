@@ -77,6 +77,8 @@ jobs:
           args: --release --features openssl_vendored --out dist
           manylinux: manylinux_2_34
           working-directory: hf_xet
+          before-script-linux: |
+            yum install openssl-devel libatomic_ops-devel perl-IPC-Cmd -y
         #   before-script-linux-ppc64le: |
         #     set -x
             
