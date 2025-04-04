@@ -20,46 +20,46 @@ permissions:
   contents: read
 
 jobs:
-  linux:
-    runs-on: ${{ matrix.platform.runner }}
-    strategy:
-      matrix:
-        platform:
-          - runner: ubuntu-22.04
-            target: x86_64
-            manylinux: auto
-            features: "--features openssl_vendored"
-          - runner: ubuntu-22.04
-            target: aarch64
-            manylinux: manylinux_2_28
-            features: "--features openssl_vendored"
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: 3.x
-      - name: Build wheels
-        uses: PyO3/maturin-action@v1
-        with:
-          target: ${{ matrix.platform.target }}
-          args: --release ${{ matrix.platform.features }} --out dist
-          sccache: 'true'
-          manylinux: ${{ matrix.platform.manylinux }}
-          working-directory: hf_xet
-          before-script-linux: |
-            if command -v apt-get &> /dev/null; then
-                apt-get update && apt-get install libssl-dev libatomic-ops-dev -y
-            elif command -v yum &> /dev/null; then
-                yum install openssl-devel devtoolset-10-libatomic-devel perl-IPC-Cmd -y
-            else
-                echo "Neither apt-get nor yum is installed. Please install a package manager."
-                exit 1
-            fi
-      - name: Upload wheels
-        uses: actions/upload-artifact@v4
-        with:
-          name: wheels-linux-${{ matrix.platform.target }}
-          path: hf_xet/dist
+  # linux:
+  #   runs-on: ${{ matrix.platform.runner }}
+  #   strategy:
+  #     matrix:
+  #       platform:
+  #         - runner: ubuntu-22.04
+  #           target: x86_64
+  #           manylinux: auto
+  #           features: "--features openssl_vendored"
+  #         # - runner: ubuntu-22.04
+  #         #   target: aarch64
+  #         #   manylinux: manylinux_2_28
+  #         #   features: "--features openssl_vendored"
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: actions/setup-python@v5
+  #       with:
+  #         python-version: 3.x
+  #     - name: Build wheels
+  #       uses: PyO3/maturin-action@v1
+  #       with:
+  #         target: ${{ matrix.platform.target }}
+  #         args: --release ${{ matrix.platform.features }} --out dist
+  #         sccache: 'true'
+  #         manylinux: ${{ matrix.platform.manylinux }}
+  #         working-directory: hf_xet
+  #         before-script-linux: |
+  #           if command -v apt-get &> /dev/null; then
+  #               apt-get update && apt-get install libssl-dev libatomic-ops-dev -y
+  #           elif command -v yum &> /dev/null; then
+  #               yum install openssl-devel devtoolset-10-libatomic-devel perl-IPC-Cmd -y
+  #           else
+  #               echo "Neither apt-get nor yum is installed. Please install a package manager."
+  #               exit 1
+  #           fi
+  #     - name: Upload wheels
+  #       uses: actions/upload-artifact@v4
+  #       with:
+  #         name: wheels-linux-${{ matrix.platform.target }}
+  #         path: hf_xet/dist
 
   linux-ppc64le:
     runs-on: ubuntu-22.04
@@ -76,9 +76,9 @@ jobs:
           # target: manylinux_2_34
           args: --release --features openssl_vendored --out dist
           manylinux: manylinux_2_34
-          working-directory: hf_xet
-          before-script-linux: |
-            yum install openssl-devel libatomic_ops-devel perl-IPC-Cmd -y
+          # working-directory: hf_xet
+          # before-script-linux: |
+          #   yum install openssl-devel libatomic_ops-devel perl-IPC-Cmd -y
         #   before-script-linux-ppc64le: |
         #     set -x
             
