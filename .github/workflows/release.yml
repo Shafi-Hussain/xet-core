@@ -33,9 +33,9 @@ jobs:
           #   target: aarch64
           #   manylinux: manylinux_2_28
           #   features: "--features openssl_vendored"
-          - runner: ubuntu-22.04
-            target: ppc64le
-            manylinux: manylinux_3_34
+          # - runner: ubuntu-22.04
+          #   target: ppc64le
+          #   manylinux: manylinux_3_34
             # building openssl fails
             # features: "--features openssl_vendored"
     steps:
@@ -95,6 +95,7 @@ jobs:
           manylinux: ${{ matrix.platform.manylinux }}
           working-directory: hf_xet
           before-script-linux: |
+            set -x
             yum install openssl-devel libatomic_ops-devel perl-IPC-Cmd pkg-config -y
         #   before-script-linux-ppc64le: |
         #     set -x
