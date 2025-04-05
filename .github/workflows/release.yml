@@ -33,11 +33,11 @@ jobs:
           #   target: aarch64
           #   manylinux: manylinux_2_28
           #   features: "--features openssl_vendored"
-          # - runner: ubuntu-22.04
-          #   target: ppc64le
-          #   manylinux: manylinux_3_34
+          - runner: ubuntu-22.04
+            target: ppc64le
+            manylinux: manylinux_2_34-cross
             # building openssl fails
-            # features: "--features openssl_vendored"
+            features: "--features openssl_vendored"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -49,18 +49,13 @@ jobs:
           target: ${{ matrix.platform.target }}
           args: --release ${{ matrix.platform.features }} --out dist
           # building sscache fails
-          # sccache: 'true'
+          sccache: 'true'
           manylinux: ${{ matrix.platform.manylinux }}
           working-directory: hf_xet
           before-script-linux: |
-            GLIBC=$(ldd --version | head -1 | grep -oE '[0-9]+\.[0-9]+')
             if command -v apt-get &> /dev/null; then
                 apt-get update && apt-get install libssl-dev libatomic-ops-dev -y
             elif command -v yum &> /dev/null; then
-                if $GLIBC == "2.34"; then
-                    yum install openssl-devel libatomic_ops-devel perl-IPC-Cmd pkg-config -y
-                    exit 0
-                fi
                 yum install openssl-devel devtoolset-10-libatomic-devel perl-IPC-Cmd -y
             else
                 echo "Neither apt-get nor yum is installed. Please install a package manager."
