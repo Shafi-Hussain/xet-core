@@ -41,7 +41,7 @@ jobs:
             -v ${{ github.workspace }}:/ws \
             $IMAGE \
             bash -exc "
-              yum install g++ python3-devel python3-pip openssl-devel libatomic_ops-devel perl-IPC-Cmd rust -y
+              yum install g++ python3-devel python3-pip openssl-devel libatomic_ops-devel perl-IPC-Cmd rust cargo -y
               # curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
               # source $HOME/.cargo/env
               pip3 install maturin
