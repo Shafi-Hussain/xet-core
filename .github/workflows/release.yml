@@ -46,7 +46,7 @@ jobs:
               # source $HOME/.cargo/env
               pip3 install maturin
               cd /ws/hf_xet
-              maturin build --release --manylinux 2_34
+              maturin build --release --manylinux 2_34 --out dist --auditwheel skip
             "
       - name: Upload wheels
         uses: actions/upload-artifact@v4
