@@ -5,132 +5,231 @@
 #
 name: Release
 
+# on:
+#   push:
+#     branches: 
+#       - main
+#   workflow_dispatch:
+#     inputs:
+#       tag:
+#         description: 'Semantic version for PyPI release (tag will share the same name)'
+#         required: true
+#         default: 'v0.1.0'
 on:
-  push:
-    branches: 
-      - main
   workflow_dispatch:
-    inputs:
-      tag:
-        description: 'Semantic version for PyPI release (tag will share the same name)'
-        required: true
-        default: 'v0.1.0'
 
 permissions:
   contents: read
 
 jobs:
-  linux:
-    runs-on: ${{ matrix.platform.runner }}
+  manylinux_234:
+    runs-on: ubuntu-latest
     strategy:
       matrix:
-        platform:
-          - runner: ubuntu-22.04
-            target: x86_64
-            manylinux: auto
-            features: "--features openssl_vendored"
-          # - runner: ubuntu-22.04
-          #   target: aarch64
-          #   manylinux: manylinux_2_28
-          #   features: "--features openssl_vendored"
-          - runner: ubuntu-22.04
-            target: ppc64le
-            manylinux: manylinux_2_34-cross
-            # building openssl fails
-            features: "--features openssl_vendored"
+        # add more arch
+        arch: [ppc64le]
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: 3.x
-      - name: Build wheels
-        uses: PyO3/maturin-action@v1
-        with:
-          target: ${{ matrix.platform.target }}
-          args: --release ${{ matrix.platform.features }} --out dist
-          # building sscache fails
-          sccache: 'true'
-          manylinux: ${{ matrix.platform.manylinux }}
-          working-directory: hf_xet
-          before-script-linux: |
-            if command -v apt-get &> /dev/null; then
-                sudo apt-get update && apt-get install libssl-dev libatomic-ops-dev -y
-            elif command -v yum &> /dev/null; then
-                sudo yum install openssl-devel devtoolset-10-libatomic-devel perl-IPC-Cmd -y
-            else
-                echo "Neither apt-get nor yum is installed. Please install a package manager."
-                exit 1
-            fi
+      - name: Setup QEMU
+        uses: docker/setup-qemu-action@v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Build wheel in manylinux_2_34
+        run: |
+          IMAGE=quay.io/pypa/manylinux_2_34_${{ matrix.arch }}
+          docker run --rm \
+            -v ${{ github.workspace }}:/ws \
+            $IMAGE \
+            bash -exc "
+              yum install g++ python3-devel python3-pip openssl-devel libatomic_ops-devel perl-IPC-Cmd -y
+              curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+              source $HOME/.cargo/env
+              pip3 install maturin
+              cd /ws/hf_xet
+              maturin build --release --manylinux 2_34
+            "
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
-          name: wheels-linux-${{ matrix.platform.target }}
+          name: wheels-linux-${{ matrix.arch }}
           path: hf_xet/dist
+#   linux:
+#     runs-on: ${{ matrix.platform.runner }}
+#     strategy:
+#       matrix:
+#         platform:
+#           - runner: ubuntu-22.04
+#             target: x86_64
+#             manylinux: auto
+#             features: "--features openssl_vendored"
+#           - runner: ubuntu-22.04
+#             target: aarch64
+#             manylinux: manylinux_2_28
+#             features: "--features openssl_vendored"
+#     steps:
+#       - uses: actions/checkout@v4
+#       - uses: actions/setup-python@v5
+#         with:
+#           python-version: 3.x
+#       - name: Build wheels
+#         uses: PyO3/maturin-action@v1
+#         with:
+#           target: ${{ matrix.platform.target }}
+#           args: --release ${{ matrix.platform.features }} --out dist
+#           sccache: 'true'
+#           manylinux: ${{ matrix.platform.manylinux }}
+#           working-directory: hf_xet
+#           before-script-linux: |
+#             if command -v apt-get &> /dev/null; then
+#                 apt-get update && apt-get install libssl-dev libatomic-ops-dev -y
+#             elif command -v yum &> /dev/null; then
+#                 yum install openssl-devel devtoolset-10-libatomic-devel perl-IPC-Cmd -y
+#             else
+#                 echo "Neither apt-get nor yum is installed. Please install a package manager."
+#                 exit 1
+#             fi
+#       - name: Upload wheels
+#         uses: actions/upload-artifact@v4
+#         with:
+#           name: wheels-linux-${{ matrix.platform.target }}
+#           path: hf_xet/dist
 
-  linux-ppc64le:
-    runs-on: ${{ matrix.platform.runner }}
-    strategy:
-      matrix:
-        platform:
-          - runner: ubuntu-22.04
-            target: powerpc64le-unknown-linux-gnu
-            manylinux: manylinux_2_34
-            features: "--features openssl_vendored"
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: 3.x
-      - name: Build wheels
-        # DO NOT USE maturin-action@v1 with manylinux_2_34 (probably not yet supported)
-        # Ref: https://github.com/PyO3/maturin-action?tab=readme-ov-file
-        uses: PyO3/maturin-action@v1
-        with:
-          target: ${{ matrix.platform.target }}
-          args: --release ${{ matrix.platform.features }} --out dist
-          manylinux: ${{ matrix.platform.manylinux }}
-          working-directory: hf_xet
-          before-script-linux: |
-            set -x
-            yum install openssl-devel libatomic_ops-devel perl-IPC-Cmd pkg-config perl -y
-            export OPENSSL_DIR=/usr
-            export OPENSSL_LIB_DIR=/usr/lib64
-            export OPENSSL_INCLUDE_DIR=/usr/include
-            # PUBKEY=gpg-pubkey-615d762f-62f504a1
-            # curl https://public.dhe.ibm.com/software/server/POWER/Linux/toolchain/at/redhat/RHEL9/$PUBKEY -o KEY
-            # rpm --import KEY
-            # cat <<EOF> /etc/yum.repos.d/advance-toolchain.repo
-            # [advance-toolchain]
-            # name=Advance Toolchain IBM FTP
-            # baseurl=https://public.dhe.ibm.com/software/server/POWER/Linux/toolchain/at/redhat/RHEL9
-            # enabled=1
-            # gpgcheck=1
-            # gpgkey=https://public.dhe.ibm.com/software/server/POWER/Linux/toolchain/at/redhat/RHEL9/$PUBKEY
-            # EOF
-            # yum install -y advance-toolchain-at17.0-cross*
-            # export PATH=/opt/at17.0/bin/:/opt/at17.0/lib:/opt/at17.0/powerpc64le-linux-gnu/bin/:/opt/at17.0/powerpc64le-linux-gnu/lib64/:/opt/at17.0/powerpc64le-linux-gnu/lib:$PATH
-        #   before-script-linux-ppc64le: |
-        #     set -x
-            
-        #     # compare glibc version and yum/apt if needed
-        #     GLIBC=$(ldd --version | head -1 | grep -oE '[0-9]+\.[0-9]+')
+#   musllinux:
+#     runs-on: ${{ matrix.platform.runner }}
+#     strategy:
+#       matrix:
+#         platform:
+#           - runner: ubuntu-22.04
+#             target: x86_64
+#             features: "--features openssl_vendored"
+#           - runner: ubuntu-22.04
+#             target: aarch64
+#             features: "--features openssl_vendored"
+#     steps:
+#       - uses: actions/checkout@v4
+#       - uses: actions/setup-python@v5
+#         with:
+#           python-version: 3.x
+#       - name: Build wheels
+#         uses: PyO3/maturin-action@v1
+#         with:
+#           target: ${{ matrix.platform.target }}
+#           args: --release ${{ matrix.platform.features }} --out dist
+#           sccache: 'true'
+#           manylinux: musllinux_1_2
+#           working-directory: hf_xet
+#       - name: Upload wheels
+#         uses: actions/upload-artifact@v4
+#         with:
+#           name: wheels-musllinux-${{ matrix.platform.target }}
+#           path: hf_xet/dist
 
-        #     # install rust and maturin
-        #     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-        #     yum install openssl-devel libatomic_ops-devel perl-IPC-Cmd -y
-        # #     pip install maturin
-        # run: |
-        #     GLIBC=$(ldd --version | head -1 | grep -oE '[0-9]+\.[0-9]+')
-            
-        #     # install rust and maturin
-        #     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-        #     yum install openssl-devel libatomic_ops-devel perl-IPC-Cmd -y
-        #     pip install maturin
-            
-        #     # build wheel
-        #     maturin pep517 build-wheel --auditwheel=skip
-      - name: Upload wheels
-        uses: actions/upload-artifact@v4
-        with:
-          name: wheels-linux-${{ matrix.platform.target }}
-          path: hf_xet/dist
+#   windows:
+#     runs-on: ${{ matrix.platform.runner }}
+#     strategy:
+#       matrix:
+#         platform:
+#           - runner: windows-latest
+#             target: x64
+#     steps:
+#       - uses: actions/checkout@v4
+#       - uses: actions/setup-python@v5
+#         with:
+#           python-version: 3.x
+#           architecture: ${{ matrix.platform.target }}
+#       - name: Build wheels
+#         uses: PyO3/maturin-action@v1
+#         with:
+#           target: ${{ matrix.platform.target }}
+#           args: --release --out dist
+#           sccache: 'true'
+#           working-directory: hf_xet
+#       - name: Upload wheels
+#         uses: actions/upload-artifact@v4
+#         with:
+#           name: wheels-windows-${{ matrix.platform.target }}
+#           path: hf_xet/dist
+
+#   macos:
+#     runs-on: ${{ matrix.platform.runner }}
+#     strategy:
+#       matrix:
+#         platform:
+#           - runner: macos-13
+#             target: x86_64
+#           - runner: macos-14
+#             target: aarch64
+#     steps:
+#       - uses: actions/checkout@v4
+#       - uses: actions/setup-python@v5
+#         with:
+#           python-version: 3.x
+#       - name: Build wheels
+#         uses: PyO3/maturin-action@v1
+#         with:
+#           target: ${{ matrix.platform.target }}
+#           args: --release --out dist
+#           sccache: 'true'
+#           working-directory: hf_xet
+#       - name: Upload wheels
+#         uses: actions/upload-artifact@v4
+#         with:
+#           name: wheels-macos-${{ matrix.platform.target }}
+#           path: hf_xet/dist
+
+#   sdist:
+#     runs-on: ubuntu-latest
+#     steps:
+#       - uses: actions/checkout@v4
+#       - name: Build sdist
+#         uses: PyO3/maturin-action@v1
+#         with:
+#           command: sdist
+#           args: --out dist
+#           working-directory: hf_xet
+#       - name: Upload sdist
+#         uses: actions/upload-artifact@v4
+#         with:
+#           name: wheels-sdist
+#           path: hf_xet/dist
+
+#   release-pypi:
+#     name: Release PyPi
+#     runs-on: ubuntu-latest
+#     if: ${{ github.event_name == 'workflow_dispatch' }}
+#     needs: [github-release]
+#     permissions:
+#       # Use to sign the release artifacts
+#       id-token: write
+#       # Used to upload release artifacts
+#       contents: write
+#       # Used to generate artifact attestation
+#       attestations: write
+#     environment: release
+#     steps:
+#       - uses: actions/download-artifact@v4
+#       - name: Generate artifact attestation
+#         uses: actions/attest-build-provenance@v1
+#         with:
+#           subject-path: 'wheels-*/*'
+#       - name: Publish to PyPI
+#         uses: PyO3/maturin-action@v1
+#         with:
+#           command: upload
+#           args: --non-interactive --skip-existing wheels-*/*
+
+#   github-release:
+#     name: Create GitHub release
+#     runs-on: ubuntu-latest
+#     permissions:
+#       contents: write
+#     if: ${{ github.event_name == 'workflow_dispatch' }}
+#     needs: [ linux, musllinux, windows, macos, sdist ]
+#     steps:
+#       - uses: actions/checkout@v4
+#       - uses: actions/download-artifact@v4
+#       - name: Create GitHub Release
+#         env: 
+#           GH_TOKEN: ${{ github.token }}
+#         run: |
+#           gh release create ${{ github.event.inputs.tag}} wheels-*/* --generate-notes --prerelease
